@@ -16,7 +16,7 @@ MAX_INSTRUCTION_TO_INLINE = 16
 def replace_temporaries(instructions):
     mapping = {}  # keep track of already remapped temporaries
     for instruction in instructions:
-        instruction.replace_temporaries(mapping)
+        instruction.replace_temporaries(mapping, create_new=True)
 
     return instructions
 
@@ -57,20 +57,20 @@ def remove_save_space_statements(instructions, number_of_parameters, number_of_r
     return instructions
 
 
-# Remove dontcares by substituting the SaveStat nodes with useless StoreStats; this passes
-# the register allocation and can be removed before codegen
-# TODO: remove this useless movs before codegen
+# Remove dontcares: note that this breaks RegisterAllocation, since the
+# symbol used for the dontcare is never live; but this gets later solved
+# using Dead Variable Elimination
 def remove_dont_cares(instructions, returns, returns_destinations):
     i = 0
+    instrs = instructions[:]
     for ret in returns:
         instruction = instructions[i]
         if isinstance(instruction, SaveSpaceStat) and instruction.space_needed > 0:  # saving space for a return
-            dest = returns_destinations[ret]
-            instructions[i] = StoreStat(parent=instruction.parent, dest=dest, symbol=dest, symtab=instruction.symtab)
+            instrs.remove(instruction)
             i += 1
         else:
             i += 2  # not a dontcare, skip the assignment
-    return instructions
+    return instrs
 
 
 # Change all StoreStat destinations from variables to temporaries, returning
