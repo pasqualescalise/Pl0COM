@@ -1,136 +1,102 @@
-# pl0com
+# PLe0COM
 
-Toy compiler for the Code Optimization and Transformation course held at
-Politecnico di Milano.
+Optimizing (toy) compiler for a modified and extended version of the [PL/0 language](https://en.wikipedia.org/wiki/PL/0)
 
-This compiler can be considered the middle point between ACSE and a serious
-compiler like clang or GCC ~~(apart from the fact that it is written in a
-ridiculously inappropriate language for the task such as Python)~~.
+This is a fork of pl0com, a toy compiler for the [Code Optimization and Transformation course held at Politecnico di Milano](https://cto-course-polimi.github.io/)
 
-It features a hand-written recursive-descent parser (instead of a Yacc+Bison
-generated parser), an AST and an IR (instead of simply using syntax-directed
-translation to a simplified flavour of machine language), and a code
-generation stage which produces (hopefully) valid ARM code (instead of producing
-code for a fictional architecture, albeit there are rumors that a version of
-ACSE modified to produce x86_64 code exists somewhere ::hint hint::).
+It features a hand-written recursive-descent parser, an AST and an IR, various optimization stages and a code generation stage which produces (hopefully) valid 32 bit ARMv6 code
 
-What is still missing is support for any kind of optimization, and additionally
-the AST and IR design leaves a lot to be desired. The usage of real memory
-variables -- instead of always placing them into registers like in ACSE --
-actually makes this compiler produce much worse code than ACSE, but what can
-you do. After all, this issue could only be fixed by rewriting the whole
-compiler, and perfect is the worst enemy of good. Leave it be, and bring your
-search of perfection elsewhere ~~and far away from Python please~~.
+I'm using it to experiment and have fun with compiler stuff
 
-## How to test the output
+## Extended features
 
-If you are running Linux, and your PC doesn't have an ARM CPU, an easy way to
-run a usermode Linux binary built for ARM is to use QEmu usermode emulation
-(https://qemu-project.gitlab.io/qemu/user/main.html#linux-user-space-emulator).
++ Functions can accept parameters and can return values; callers can ignore return values
++ Support for ints, shorts, bytes and strings (char arrays)
++ Explicit logging: it's clear what the compiler does and why (with colors!)
++ More ControlFlowGraph analysis
++ Optimizations
+	+ Function inlining
+	+ Dead code elimination
+	+ Memory-to-register promotion
++ Fully working test suite
++ PEP8 compliant (except E501)
 
-These are the steps to follow to properly compile, run and debug a program
-compiled by `pl0com` on a Ubuntu Linux machine. Of course you will have to
-adapt some commands to your specific distribution if you are not using Ubuntu.
-At the time I am writing Ubuntu is the most prolific distribution there is,
-so don't complain if you are reading this in a distant future where everybody
-uses Arch (and in that case God may have mercy on your soul).
+## Dependencies
 
-#### Step 1: Install usermode QEmu, ARM GCC and GDB.
+The code generated should work on CPU that supports ARMv6, like any Raspberry PI
 
-Simply run the following command:
+### On non-ARM Linux machines
 
 ```sh
-$ sudo apt qemu-user gcc-arm-linux-gnueabi gdb-multiarch
+sudo apt install qemu-user gcc-arm-linux-gnueabi
 ```
 
-Note that there is another GCC package named `gcc-arm-linux-gnueabihf`. The
-`hf` at the end stands for "hard float" AKA the VFP floating point extension
-of ARM. However this extension does not exist in ARMv6 which is the version
-of the ARM instruction set used by `pl0com`, thus using the GCC installed by
-that package causes troubles.
-
-The ARMv6 choice was made because that was the instruction set implemented on
-the original Raspberry Pi, so it ensures a wide level of compatibility in case
-you want to run the compiled code on real hardware.
-
-#### Step 2: Compile a program with `pl0com`
-
-First, place the program to be compiled at the end of `lexer.py` unless you
-are happy with the shitty test program that is already there. Note that such
-shitty test program is the only program the compiler is guaranteed to
-be able to compile correctly.
-
-Then, produce an assembly file from the compiler by invoking it:
+### On ARM Linux machines
 
 ```sh
-$ ./main.py out.s
+sudo apt install gcc
 ```
 
-#### Step 3: Link the program with the runtime library
+To use the Makefile on ARM, the variables `$(CC)` and `$(RUN_COMMAND)` must be changed
+
+## Compile and run
+
+### Compile
+
+You can run the compiler with
 
 ```sh
-$ arm-linux-gnueabi-gcc out.s runtime.c -g -static -march=armv6 -o out
+python3 main.py -i <input_file> [-o <output_file> -O{0,1,2}]
 ```
 
-Apart from the `-g` argument which you should know what it is (and if you don't
-you should be ashamed of yourself), the `-static` argument forces GCC to link
-everything statically (libc and syscall stubs included), and `-march=armv6`
-selects the ARMv6 architecture.
+to generate an ARMv6 assembly file
 
-#### Step 4: Run the binary
+To compile to an actual binary, just use
 
 ```sh
-qemu-arm -cpu arm1136 out
+make compile test=<input_file> [EXECUTABLE=<executable> (default: out)]
 ```
 
-The `-cpu arm1136` argument can be omitted, it only specifies which CPU core to
-emulate. The ARM1136 is the oldest core supported by QEmu that implements ARMv6
-(and in fact it does not implement anything more than that).
+### Execute
 
-#### Step 4a: Debug the binary
-
-In order to attach GDB to the binary being run, the qemu invocation changes like
-this:
+To run the binary on a non-ARM Linux machine, then use
 
 ```sh
-qemu-arm -cpu arm1136 -g 7777
+make execute [EXECUTABLE=<executable> (default: out)]
 ```
 
-The `-g 7777` argument tells QEmu to wait GDB to connect via a socket on port
-`7777`. Of course the socket port can be changed to any number you like as long
-as it does not clash with standard sockets. In general, the larger the number,
-the least probable are the clashes.
+### Compile and Execute
 
-In a separate terminal, invoke `gdb-multiarch` (NOT normal `gdb`, that just
-supports your native architecture).
+Or just do both with
 
-At the GDB prompt run the following commands:
-
-```
-file out
-target remote :7777
+```sh
+make test=<input_file> [EXECUTABLE=<executable> (default: out)]
 ```
 
-The command `file out` tells GDB the executable from where it should load
-symbolication and debugging information from.
+If the input file is present in the `tests` directory, it also checks if its output (in the `tests/expected`) directory is correct
 
-The command `target remote :7777` actually connects GDB to QEmu. You can
-also debug another machine over the network by specifying an IP address before
-the port number and the colon (of course; what did you think the colon was
-there for?).
+### Debugger
 
-At this point you can type `continue` to un-freeze QEmu and actually start
-the execution of the program. Everything works as if you were debugging a
-native process (of course the disassembly will be in ARM assembly language),
-except for the fact that the command `run` will not work.
+To debug the executable on a non-ARM machine, use
 
-### What if I am not using Linux?
+```sh
+make test=<input_file> dbg=True [EXECUTABLE=<executable> (default: out)]
+```
 
-Create a virtual machine running Linux and then run the steps above.
-Seriously.
+and in another terminal
 
-Alternatively, if you want to limit the amount of recursion (albeit as a
-computer scientist the sole mention of recursion should be enough to produce an
-above-average level of excitement) you can use QEmu in system mode to setup a
-native ARMv6 VM (you can pilfer Raspbian binaries for that purpose).
-Good luck with file sharing.
+```sh
+make dbg
+```
+
+The debugger can be set in the Makefile or using the variable `$(DEBUGGER)`; I use [pwndbg](https://github.com/pwndbg/pwndbg/), if you want standard gdb on a non-ARM machine use gdb-multiarch
+
+## Testing
+
+```sh
+make -s testall
+```
+
+compiles and executes all tests, checking if their output is the expected one
+
+To add a new test, put it in the `tests` directory, then add its expected output in the `tests/expected/` directory in a file with the same name as the test and extension ".expected"; you can check if tests file with a specific message by putting that error message in the `.expected` file
