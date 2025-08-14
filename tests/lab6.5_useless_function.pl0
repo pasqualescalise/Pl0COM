@@ -1,0 +1,32 @@
+VAR y, z : int;
+
+PROCEDURE useless(int x);
+	BEGIN
+		x := 4;
+		y := 3;
+		z := x + y
+	END;
+
+BEGIN
+	CALL useless(2)
+END.
+
+{
+XXX: this is not identified as "useless" since the variable
+i is live at the end of every BasicBlock
+
+VAR y, z, i : int;
+
+PROCEDURE useless(int x);
+	BEGIN
+		for i := 0; i < 100; i := i + 1 do BEGIN
+			x := 4;
+			y := 3;
+			z := x + y
+		END
+	END;
+
+BEGIN
+	CALL useless(2)
+END.
+}

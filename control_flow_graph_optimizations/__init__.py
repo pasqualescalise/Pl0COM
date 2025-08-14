@@ -9,7 +9,7 @@ from control_flow_graph_optimizations.dead_variable_elimination import perform_d
 from control_flow_graph_optimizations.chain_load_store_elimination import perform_chain_load_store_elimination
 from control_flow_graph_analyses.liveness_analysis import perform_liveness_analysis, liveness_analysis_representation
 from cfg import ControlFlowGraph
-from logger import h3
+from logger import h3, cyan
 
 
 def perform_control_flow_graph_optimizations(program, cfg, optimization_level):
@@ -56,8 +56,9 @@ def apply_cfg_optimization(cfg, optimization_pass):
 
 # After optimizations, eliminate useless BasicBlocks and recompute liveness analysis
 def update_cfg(cfg):
-    for bb in cfg:
+    for bb in reversed(cfg):
         if len(bb.instrs) == 0:
+            print(cyan("Removed a BasicBlock"))
             cfg.remove(bb)
 
     perform_liveness_analysis(cfg)
