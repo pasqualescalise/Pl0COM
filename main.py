@@ -12,7 +12,7 @@ from cfg import ControlFlowGraph
 from regalloc import LinearScanRegisterAllocator
 from codegen import generate_code
 from logger import initialize_logger, h1, h2, remove_formatting, green, yellow, cyan, bold, italic, underline
-# from optimizations import loop_unrolling
+from pre_lowering_optimizations import perform_pre_lowering_optimizations
 from post_lowering_optimizations import perform_post_lowering_optimizations
 from control_flow_graph_optimizations import perform_control_flow_graph_optimizations
 from control_flow_graph_analyses import perform_control_flow_graph_analyses
@@ -48,10 +48,10 @@ def compile_program(text, optimization_level):
     print(h1("MIDDLE-END"))
 
     # XXX: SOME OPTIMIZATIONS GO HERE
-    # print(h2("LOOP UNROLLING"))
-    # loop_unrolling(program)
-    # program.navigate(loop_unrolling, quiet=True)
-    # print('\n', program, '\n')
+    print(h2("PRE-LOWERING OPTIMIZATIONS"))
+    perform_pre_lowering_optimizations(program, optimization_level)
+
+    print(f"\n{green('Optimized program:')}\n{program}")
 
     print(h2("LOWERING"))
     program.navigate(lowering, quiet=False)

@@ -276,7 +276,7 @@ class IRNode:  # abstract
         except Exception:
             pass
 
-        attrs = {'body', 'cond', 'value', 'thenpart', 'elifspart', 'elsepart', 'symbol', 'call', 'init', 'step', 'expr', 'target', 'defs', 'global_symtab', 'local_symtab', 'offset', 'function_symbol', 'parameters', 'returns', 'called_by_counter'} & set(dir(self))
+        attrs = {'body', 'cond', 'value', 'thenpart', 'elifspart', 'elsepart', 'symbol', 'call', 'init', 'step', 'expr', 'target', 'defs', 'global_symtab', 'local_symtab', 'offset', 'function_symbol', 'parameters', 'returns', 'called_by_counter', 'epilogue'} & set(dir(self))
 
         res = f"{cyan(f'{self.type()}')}, {id(self)}" + " {"
         if self.parent is not None:
@@ -320,7 +320,7 @@ class IRNode:  # abstract
         return str(type(self)).split("'")[1]
 
     def navigate(self, action, *args, quiet=False):
-        attrs = ['defs', 'body', 'cond', 'value', 'thenpart', 'elifspart', 'elsepart', 'symbol', 'call', 'init', 'step', 'expr', 'target', 'global_symtab', 'local_symtab', 'offset']
+        attrs = ['defs', 'body', 'cond', 'value', 'thenpart', 'elifspart', 'elsepart', 'symbol', 'call', 'init', 'step', 'expr', 'target', 'global_symtab', 'local_symtab', 'offset', 'epilogue']
         attrs = [x for x in attrs if x in set(dir(self))]
 
         if 'children' in dir(self) and len(self.children):
@@ -358,7 +358,7 @@ class IRNode:  # abstract
         if 'children' in dir(self) and len(self.children) and old in self.children:
             self.children[self.children.index(old)] = new
             return True
-        attrs = {'body', 'cond', 'value', 'thenpart', 'elifspart', 'elsepart', 'symbol', 'call', 'init', 'step', 'expr', 'target', 'defs', 'global_symtab', 'local_symtab', 'offset'} & set(dir(self))
+        attrs = {'body', 'cond', 'value', 'thenpart', 'elifspart', 'elsepart', 'symbol', 'call', 'init', 'step', 'expr', 'target', 'defs', 'global_symtab', 'local_symtab', 'offset', 'epilogue'} & set(dir(self))
 
         for d in attrs:
             try:
@@ -420,11 +420,11 @@ class IRNode:  # abstract
 # CONST and VAR
 
 class Const(IRNode):
-    def __init__(self, parent=None, value=0, symb=None, symtab=None):
+    def __init__(self, parent=None, value=0, symbol=None, symtab=None):
         log_indentation(bold(f"New Const Node (id: {id(self)})"))
         super().__init__(parent, None, symtab)
         self.value = value
-        self.symbol = symb
+        self.symbol = symbol
 
     def lower(self):
         if self.symbol is None:
@@ -434,6 +434,9 @@ class Const(IRNode):
             new = new_temporary(self.symtab, self.symbol.stype)
             loadst = LoadStat(dest=new, symbol=self.symbol, symtab=self.symtab)
         return self.parent.replace(self, StatList(children=[loadst], symtab=self.symtab))
+
+    def __deepcopy__(self, memo):
+        return Const(parent=self.parent, value=self.value, symbol=self.symbol, symtab=self.symtab)
 
 
 class Var(IRNode):
@@ -453,6 +456,9 @@ class Var(IRNode):
         new = new_temporary(self.symtab, self.symbol.stype)
         loadst = LoadStat(dest=new, symbol=self.symbol, symtab=self.symtab)
         return self.parent.replace(self, StatList(children=[loadst], symtab=self.symtab))
+
+    def __deepcopy__(self, memo):
+        return Var(parent=self.parent, var=self.symbol, symtab=self.symtab)
 
 
 class ArrayElement(IRNode):
@@ -487,6 +493,10 @@ class ArrayElement(IRNode):
         statl += [LoadStat(dest=dest, symbol=src, symtab=self.symtab)]
         return self.parent.replace(self, StatList(children=statl, symtab=self.symtab))
 
+    def __deepcopy__(self, memo):
+        new_offset = deepcopy(self.offset, memo)
+        return ArrayElement(parent=self.parent, var=self.symbol, offset=new_offset, symtab=self.symtab)
+
 
 class String(IRNode):
     """Puts a fixed string in the data SymbolTable"""
@@ -509,6 +519,9 @@ class String(IRNode):
         access_string = LoadPtrToSym(dest=ptrreg_data, symbol=data_variable, symtab=self.symtab)
 
         return self.parent.replace(self, StatList(children=[access_string], symtab=self.symtab))
+
+    def __deepcopy__(self, memo):
+        return String(parent=self.parent, value=self.value, symtab=self.symtab)
 
 
 # EXPRESSIONS
@@ -591,6 +604,13 @@ class BinExpr(Expr):
         statl = [self.children[1], self.children[2], zero_destination, load_one, entry_stat, loop_condition, test_condition, loop_update, calc_result, loop_resume, exit_stat]
         return self.parent.replace(self, StatList(children=statl, symtab=self.symtab))
 
+    def __deepcopy__(self, memo):
+        new_children = []
+        for child in self.children:
+            new_children.append(deepcopy(child, memo))
+
+        return BinExpr(parent=self.parent, children=new_children, symtab=self.symtab)
+
 
 class UnExpr(Expr):
     def __init__(self, parent=None, children=None, symtab=None):
@@ -606,6 +626,13 @@ class UnExpr(Expr):
         stmt = UnaryStat(dest=dest, op=self.children[0], src=src, symtab=self.symtab)
         statl = [self.children[1], stmt]
         return self.parent.replace(self, StatList(children=statl, symtab=self.symtab))
+
+    def __deepcopy__(self, memo):
+        new_children = []
+        for child in self.children:
+            new_children.append(deepcopy(child, memo))
+
+        return UnExpr(parent=self.parent, children=new_children, symtab=self.symtab)
 
 
 class CallExpr(Expr):
@@ -653,6 +680,13 @@ class CallExpr(Expr):
             stats += [StoreStat(symbol=self.children[i].destination(), dest=function_definition_symbols[i], symtab=self.symtab)]
 
         return self.parent.replace(self, StatList(children=stats, symtab=self.symtab))
+
+    def __deepcopy__(self, memo):
+        new_parameters = []
+        for parameter in self.parameters:
+            new_parameters.append(deepcopy(parameter, memo))
+
+        return CallExpr(parent=self.parent, function_symbol=self.function_symbol, parameters=new_parameters, symtab=self.symtab)
 
 
 # STATEMENTS
@@ -745,6 +779,11 @@ class CallStat(Stat):
 
         return self.parent.replace(self, StatList(children=stats, symtab=self.symtab))
 
+    def __deepcopy__(self, memo):
+        new_call_expr = deepcopy(self.call, memo)
+        new_function_symbol = deepcopy(self.function_symbol, memo)
+        return CallStat(parent=self.parent, call_expr=new_call_expr, function_symbol=new_function_symbol, returns=self.returns, symtab=self.symtab)
+
 
 class IfStat(Stat):
     def __init__(self, parent=None, cond=None, thenpart=None, elifspart=None, elsepart=None, symtab=None):
@@ -824,6 +863,13 @@ class IfStat(Stat):
         stat_list = StatList(self.parent, stats, self.symtab)
         return self.parent.replace(self, stat_list)
 
+    def __deepcopy__(self, memo):
+        cond = deepcopy(self.cond, memo)
+        thenpart = deepcopy(self.thenpart, memo)
+        elifspart = deepcopy(self.elifspart, memo)
+        elsepart = deepcopy(self.elsepart, memo)
+        return IfStat(parent=self.parent, cond=cond, thenpart=thenpart, elifspart=elifspart, elsepart=elsepart, symtab=self.symtab)
+
 
 class WhileStat(Stat):
     def __init__(self, parent=None, cond=None, body=None, symtab=None):
@@ -845,9 +891,14 @@ class WhileStat(Stat):
         stat_list = StatList(self.parent, [self.cond, branch, self.body, loop, exit_stat], self.symtab)
         return self.parent.replace(self, stat_list)
 
+    def __deepcopy__(self, memo):
+        new_cond = deepcopy(self.cond, memo)
+        new_body = deepcopy(self.body, memo)
+        return WhileStat(parent=self.parent, cond=new_cond, body=new_body, symtab=self.symtab)
+
 
 class ForStat(Stat):
-    def __init__(self, parent=None, init=None, cond=None, step=None, body=None, symtab=None):
+    def __init__(self, parent=None, init=None, cond=None, step=None, body=None, epilogue=None, symtab=None):
         log_indentation(bold(f"New ForStat Node (id: {id(self)})"))
         super().__init__(parent, [], symtab)
         self.init = init
@@ -859,6 +910,10 @@ class ForStat(Stat):
         self.step.parent = self
         self.body.parent = self
 
+        self.epilogue = epilogue
+        if self.epilogue is not None:
+            self.epilogue.parent = self
+
     def lower(self):
         entry_label = TYPENAMES['label']()
         exit_label = TYPENAMES['label']()
@@ -868,40 +923,19 @@ class ForStat(Stat):
         branch = BranchStat(cond=self.cond.destination(), target=exit_label, negcond=True, symtab=self.symtab)
         loop = BranchStat(target=entry_label, symtab=self.symtab)
         stat_list = StatList(self.parent, [self.init, self.cond, branch, self.body, self.step, loop, exit_stat], self.symtab)
+
+        if self.epilogue is not None:
+            stat_list.append(self.epilogue)
+
         return self.parent.replace(self, stat_list)
 
-    """
-    TODO:
-    def unroll(self, unrolling_factor):
-        return
-        original_body = self.body.children[:]
-
-        loop_end = self.cond.children[-1]
-        factor = Const(value=unrolling_factor, symtab=self.symtab)
-
-        # modulus = BinExpr(parent=self, children=['mod', loop_end, factor], symtab=self.symtab)
-        modulus = BinExpr(parent=self, children=['shr', loop_end, factor], symtab=self.symtab)
-        self.cond.children[-1] = modulus
-
-        copy_step = deepcopy(self.step)
-        copy_step.deepcopy_fix(symtab=self.symtab)
-
-        for i in range(unrolling_factor - 1):
-            self.body.append(copy_step)
-
-            for child in original_body:
-                copy_child = deepcopy(child)
-                copy_child.deepcopy_fix(symtab=self.symtab)
-                self.body.append(copy_child)
-
-        # cleanup
-        # TODO: append it to the parent of the ForStat right after it
-        # loop_end = self.cond.children[-1]
-        # if unrolling_factor == 2:
-        #     pass
-        # else:
-        #     pass
-    """
+    def __deepcopy__(self, memo):
+        new_init = deepcopy(self.init, memo)
+        new_cond = deepcopy(self.cond, memo)
+        new_step = deepcopy(self.step, memo)
+        new_body = deepcopy(self.body, memo)
+        new_epilogue = deepcopy(self.epilogue, memo)
+        return ForStat(parent=self.parent, init=new_init, cond=new_cond, step=new_step, body=new_body, epilogue=new_epilogue, symtab=self.symtab)
 
 
 class AssignStat(Stat):
@@ -1020,6 +1054,10 @@ class AssignStat(Stat):
 
         return self.parent.replace(self, statl)
 
+    def __deepcopy__(self, memo):
+        new_expr = deepcopy(self.expr, memo)
+        return AssignStat(parent=self.parent, target=self.symbol, offset=self.offset, expr=new_expr, symtab=self.symtab)
+
 
 class PrintStat(Stat):
     def __init__(self, parent=None, expr=None, symtab=None):
@@ -1038,6 +1076,10 @@ class PrintStat(Stat):
         pc = PrintCommand(src=self.children[0].destination(), print_string=print_string, symtab=self.symtab)
         stlist = StatList(children=[self.children[0], pc], symtab=self.symtab)
         return self.parent.replace(self, stlist)
+
+    def __deepcopy__(self, memo):
+        new_expr = deepcopy(self.children[0], memo)
+        return PrintStat(parent=self.parent, expr=new_expr, symtab=self.symtab)
 
 
 class PrintCommand(Stat):  # low-level node
@@ -1073,6 +1115,9 @@ class ReadStat(Stat):
         read = ReadCommand(dest=tmp, symtab=self.symtab)
         stlist = StatList(children=[read], symtab=self.symtab)
         return self.parent.replace(self, stlist)
+
+    def __deepcopy__(self, memo):
+        return ReadStat(parent=self.parent, symtab=self.symtab)
 
 
 class ReadCommand(Stat):  # low-level node
@@ -1128,6 +1173,13 @@ class ReturnStat(Stat):
 
         stat_list = StatList(self.parent, stats, self.symtab)
         return self.parent.replace(self, stat_list)
+
+    def __deepcopy__(self, memo):
+        new_children = []
+        for child in self.children:
+            new_children.append(deepcopy(child, memo))
+
+        return ReturnStat(parent=self.parent, children=new_children, symtab=self.symtab)
 
 
 class BranchStat(Stat):  # low-level node
@@ -1534,8 +1586,8 @@ class Block(Stat):  # low-level node
         pass
 
     def __deepcopy__(self, memo):
-        new_body = deepcopy(self.body)
-        new_defs = deepcopy(self.defs)
+        new_body = deepcopy(self.body, memo)
+        new_defs = deepcopy(self.defs, memo)
 
         return Block(parent=self.parent, gl_sym=self.global_symtab, lc_sym=self.local_symtab, defs=new_defs, body=new_body)
 
@@ -1563,7 +1615,7 @@ class FunctionDef(Definition):
         return self.body.global_symtab.exclude([TYPENAMES['function'], TYPENAMES['label']])
 
     def __deepcopy__(self, memo):
-        new_body = deepcopy(self.body)
+        new_body = deepcopy(self.body, memo)
 
         return FunctionDef(parent=self.parent, symbol=self.symbol, parameters=self.parameters, body=new_body, returns=self.returns, called_by_counter=self.called_by_counter)
 
